@@ -1,14 +1,21 @@
 import json
-from openai import OpenAI
+import time
+from openai import OpenAI, AuthenticationError, RateLimitError, APIConnectionError, APITimeoutError, BadRequestError
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
+
 def generate_quiz(topic, num_questions=3):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
+    is_valid, message = validate_input(topic)
+    if not is_valid:
+        print(f"❌ {message}")
+        return None
+    try:
+        model = "gpt-3.5-turbo"
+        messages = [
             {
                 "role": "system",
                 "content": """You are a quiz generator.
@@ -34,13 +41,52 @@ def generate_quiz(topic, num_questions=3):
                 "role": "user",
                 "content": f"Create a quiz about {topic} with {num_questions} questions"
             }
-        ],
-        response_format={"type": "json_object"}
-    )
-    
-    # Parse JSON string → Python dict
-    quiz = json.loads(response.choices[0].message.content)
-    return quiz
+        ]
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            response_format={"type": "json_object"}
+        )
+        quiz = json.loads(response.choices[0].message.content)
+        return quiz
+
+    except AuthenticationError:
+        print("❌ Invalid API key!")
+        print("→ Check your OPENAI_API_KEY in .env file")
+        return None
+
+    except RateLimitError:
+        print("⏳ Rate limit hit! Waiting 10 seconds...")
+        time.sleep(10)
+        print("→ Retrying now...")
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages
+            )
+            return json.loads(response.choices[0].message.content)
+        except Exception:
+            print("❌ Still failing — try again later!")
+            return None
+
+    except APITimeoutError:
+        print("❌ Request timed out!")
+        print("→ OpenAI is slow right now — try again")
+        return None
+
+    except APIConnectionError:
+        print("❌ No internet connection!")
+        print("→ Check your network and try again")
+        return None
+
+    except BadRequestError as e:
+        print(f"❌ Bad request: {e}")
+        print("→ Check your messages format")
+        return None
+
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return None
 
 def display_quiz(quiz):
     print(f"\n📝 Quiz: {quiz['topic']}")
@@ -59,9 +105,13 @@ def show_answers(quiz):
         print(f"Q{i}: {q['correct']} — {q['explanation']}")
 
 def generate_flashcards(topic, num_cards=5):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
+    is_valid, message = validate_input(topic)
+    if not is_valid:
+        print(f"❌ {message}")
+        return None
+    try:
+        model = "gpt-3.5-turbo"
+        messages = [
             {
                 "role": "system",
                 "content": """You are a flashcard generator.
@@ -81,12 +131,54 @@ def generate_flashcards(topic, num_cards=5):
                 "role": "user",
                 "content": f"Create {num_cards} flashcards about {topic}"
             }
-        ],
-        response_format={"type": "json_object"}
-    )
+        ]
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            response_format={"type": "json_object"}
+        )
 
-    flashcards = json.loads(response.choices[0].message.content)
-    return flashcards
+        flashcards = json.loads(response.choices[0].message.content)
+        return flashcards
+
+    except AuthenticationError:
+        print("❌ Invalid API key!")
+        print("→ Check your OPENAI_API_KEY in .env file")
+        return None
+
+    except RateLimitError:
+        print("⏳ Rate limit hit! Waiting 10 seconds...")
+        time.sleep(10)
+        print("→ Retrying now...")
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_format={"type": "json_object"}
+            )
+            return json.loads(response.choices[0].message.content)
+        except Exception:
+            print("❌ Still failing — try again later!")
+            return None
+
+    except APITimeoutError:
+        print("❌ Request timed out!")
+        print("→ OpenAI is slow right now — try again")
+        return None
+
+    except APIConnectionError:
+        print("❌ No internet connection!")
+        print("→ Check your network and try again")
+        return None
+
+    except BadRequestError as e:
+        print(f"❌ Bad request: {e}")
+        print("→ Check your messages format")
+        return None
+
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return None
 
 
 def study_flashcards(flashcards):
@@ -116,12 +208,17 @@ def study_flashcards(flashcards):
     print("\n✅ Flashcard session complete!")
 
 def stream_explanation(topic):
+    is_valid, message = validate_input(topic)
+    if not is_valid:
+        print(f"❌ {message}")
+        return
+
     print(f"\n📖 StudyBuddy explaining: {topic}\n")
     print("─" * 50)
 
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
+    try:
+        model = "gpt-3.5-turbo"
+        messages = [
             {
                 "role": "system",
                 "content": "You are StudyBuddy — explain topics clearly with examples."
@@ -130,22 +227,101 @@ def stream_explanation(topic):
                 "role": "user",
                 "content": f"Explain {topic} in simple terms with a real world example"
             }
-        ],
-        stream=True    # ← enable streaming!
-    )
+        ]
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True
+        )
 
-    # Print each chunk as it arrives
-    for chunk in response:
-        content = chunk.choices[0].delta.content
-        print(content or "", end="", flush=True)
+        # Print each chunk as it arrives
+        for chunk in response:
+            content = chunk.choices[0].delta.content
+            print(content or "", end="", flush=True)
 
-    print("\n" + "─" * 50)
+        print("\n" + "─" * 50)
 
+    except AuthenticationError:
+        print("❌ Invalid API key!")
+        print("→ Check your OPENAI_API_KEY in .env file")
+
+    except RateLimitError:
+        print("⏳ Rate limit hit! Waiting 10 seconds...")
+        time.sleep(10)
+        print("→ Retrying now...")
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True
+            )
+            for chunk in response:
+                content = chunk.choices[0].delta.content
+                print(content or "", end="", flush=True)
+            print("\n" + "─" * 50)
+        except Exception:
+            print("❌ Still failing — try again later!")
+
+    except APITimeoutError:
+        print("❌ Request timed out!")
+        print("→ OpenAI is slow right now — try again")
+
+    except APIConnectionError:
+        print("❌ No internet connection!")
+        print("→ Check your network and try again")
+
+    except BadRequestError as e:
+        print(f"❌ Bad request: {e}")
+        print("→ Check your messages format")
+
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+
+def validate_setup():
+    api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not found in .env!")
+
+    if not api_key.startswith("sk-"):
+        raise ValueError("Invalid API key format!")
+
+    print("✅ API key found!")
+    return True
+
+
+def validate_input(user_input):
+    # Check length
+    if len(user_input) > 500:
+        return False, "Input too long! Keep it under 500 characters."
+
+    # Check for injection patterns
+    injection_patterns = [
+        "ignore previous instructions",
+        "ignore all instructions",
+        "forget your instructions",
+        "you are now",
+        "new instructions:",
+        "override:",
+        "system prompt:"
+    ]
+
+    user_lower = user_input.lower()
+    for pattern in injection_patterns:
+        if pattern in user_lower:
+            return False, "⚠️ Invalid input detected!"
+
+    return True, "valid"
 
 try:
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+    validate_setup()
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     topic = input("Enter a topic: ").strip()
+    is_valid, message = validate_input(topic)
+    if not is_valid:
+        print(f"❌ {message}")
+        exit(1)
     stream_explanation(topic)
 
     # Keep showing menu until user exits!
